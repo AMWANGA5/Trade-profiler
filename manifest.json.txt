@@ -1,0 +1,10 @@
+{
+  "name": "Universal Trade Profiler",
+  "short_name": "Profiler",
+  "description": "Local performance analytics for trading logs.",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0b0f17",
+  "theme_color": "#0b0f17",
+  "orientation": "portrait"
+}
