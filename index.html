@@ -67,38 +67,81 @@
             fileReader.onload = function (event) { processRawCSVText(event.target.result); };
             fileReader.readAsText(inputTarget.files);
         }
-        function processRawCSVText(rawText) {
-            const entryRows = rawText.split(/\r?\n/).map(row => row.trim()).filter(row => row.length > 0);
-            if (entryRows.length < 2) return alert("Insufficient rows.");
-            const primaryHeaders = entryRows[0].toLowerCase().split(',').map(item => item.replace(/["']/g, "").trim());
-            const pnlKeywords = ['profit', 'pnl', 'p&l', 'amount', 'net return', 'realized', 'gain', 'loss'];
-            let mappedPnlIndex = -1;
-            for (let index = 0; index < primaryHeaders.length; index++) {
-                if (pnlKeywords.some(keyword => primaryHeaders[index].includes(keyword))) { mappedPnlIndex = index; break; }
-            }
-            if (mappedPnlIndex === -1) return alert("Could not identify performance columns.");
-            let total = 0, wins = 0, gains = 0, losses = 0;
-            for (let i = 1; i < entryRows.length; i++) {
-                const dataColumns = entryRows[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/["']/g, "").trim());
-                if (dataColumns.length <= mappedPnlIndex) continue;
-                const val = parseFloat(dataColumns[mappedPnlIndex]);
-                if (!isNaN(val)) {
-                    total++;
-                    if (val > 0) { wins++; gains += val; } else { losses += Math.abs(val); }
-                }
-            }
-            if (total === 0) return alert("No valid trades found.");
-            document.getElementById('metaCount').textContent = total;
-            document.getElementById('metaDetection').textContent = primaryHeaders.includes('ticket') ? "MetaTrader Format" : "easyMarkets App Format";
-            document.getElementById('metricWinRate').textContent = `${((wins/total)*100).toFixed(1)}%`;
-            document.getElementById('metricProfitFactor').textContent = losses > 0 ? (gains/losses).toFixed(2) : (gains > 0 ? "99.9" : "0.00");
-            document.getElementById('metricAvgWin').textContent = `$${(wins > 0 ? gains/wins : 0).toFixed(2)}`;
-            document.getElementById('metricAvgLoss').textContent = `$${((total-wins) > 0 ? losses/(total-wins) : 0).toFixed(2)}`;
-            const net = gains - losses;
-            document.getElementById('metricNetPnl').textContent = (net >= 0 ? '+' : '') + `$${net.toFixed(2)}`;
-            document.getElementById('metricNetPnl').className = `text-3xl font-black tracking-tight mt-1 ${net >= 0 ? 'text-emerald-400' : 'text-red-500'}`;
-            document.getElementById('uiEngineButton').textContent = "Data Synced";
+       function processRawCSVText(rawText) {
+    const entryRows = rawText.split(/\r?\n/).map(row => row.trim()).filter(row => row.length > 0);
+    if (entryRows.length < 2) {
+        alert("File standard fault: Insufficient row count detected.");
+        resetEngineUI();
+        return;
+    }
+
+    const primaryHeaders = entryRows[0].toLowerCase().split(',').map(item => item.replace(/["']/g, "").trim());
+    
+    const pnlKeywords = ['profit', 'pnl', 'p&l', 'amount', 'net return', 'realized', 'gain', 'loss'];
+    
+    let mappedPnlIndex = -1;
+
+    for (let index = 0; index < primaryHeaders.length; index++) {
+        const headerValue = primaryHeaders[index];
+        if (pnlKeywords.some(keyword => headerValue.includes(keyword))) {
+            mappedPnlIndex = index;
+            break;
         }
-    </script>
-</body>
-</html>
+    }
+
+    if (mappedPnlIndex === -1) {
+        alert("Header Mapping Fault: Could not identify performance columns (e.g., Profit or Amount) in your easyMarkets file.");
+        resetEngineUI();
+        return;
+    }
+
+    let tradeExecutionCounter = 0;
+    let profitableCounter = 0;
+    let grossAssetGains = 0;
+    let grossAssetLosses = 0;
+
+    for (let i = 1; i < entryRows.length; i++) {
+        const dataColumns = entryRows[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/["']/g, "").trim());
+        
+        if (dataColumns.length <= mappedPnlIndex) continue;
+
+        const rawPnlValue = parseFloat(dataColumns[mappedPnlIndex]);
+
+        if (!isNaN(rawPnlValue)) {
+            tradeExecutionCounter++;
+            if (rawPnlValue > 0) {
+                profitableCounter++;
+                grossAssetGains += rawPnlValue;
+            } else {
+                grossAssetLosses += Math.abs(rawPnlValue);
+            }
+        }
+    }
+
+    if (tradeExecutionCounter === 0) {
+        alert("Processing Fault: No numeric trade instances localized from target columns.");
+        resetEngineUI();
+        return;
+    }
+
+    const totalNetPnl = grossAssetGains - grossAssetLosses;
+    const absoluteWinRate = (profitableCounter / tradeExecutionCounter) * 100;
+    const absoluteProfitFactor = grossAssetLosses > 0 ? (grossAssetGains / grossAssetLosses) : grossAssetGains > 0 ? 99.9 : 0;
+    const finalAverageWin = profitableCounter > 0 ? (grossAssetGains / profitableCounter) : 0;
+    const finalAverageLoss = (tradeExecutionCounter - profitableCounter) > 0 ? (grossAssetLosses / (tradeExecutionCounter - profitableCounter)) : 0;
+
+    document.getElementById('metaCount').textContent = tradeExecutionCounter;
+    document.getElementById('metaDetection').textContent = primaryHeaders.includes('ticket') ? "MetaTrader Format" : "easyMarkets App Format";
+    document.getElementById('metricWinRate').textContent = `${absoluteWinRate.toFixed(1)}%`;
+    document.getElementById('metricProfitFactor').textContent = absoluteProfitFactor.toFixed(2);
+    document.getElementById('metricAvgWin').textContent = `$${finalAverageWin.toFixed(2)}`;
+    document.getElementById('metricAvgLoss').textContent = `$${finalAverageLoss.toFixed(2)}`;
+
+    const uiNetValueBlock = document.getElementById('metricNetPnl');
+    uiNetValueBlock.textContent = (totalNetPnl >= 0 ? '+' : '') + `$${totalNetPnl.toFixed(2)}`;
+    uiNetValueBlock.className = `text-3xl font-black tracking-tight mt-1 ${totalNetPnl >= 0 ? 'text-emerald-400' : 'text-red-500'}`;
+
+    const actionButton = document.getElementById('uiEngineButton');
+    actionButton.textContent = "Data Synced";
+    actionButton.className = "inline-block bg-emerald-600 text-white text-xs font-bold py-2 px-4 rounded-lg";
+}
